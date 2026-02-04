@@ -134,6 +134,47 @@ const salaryController = {
     },
 
     /**
+     * PUT /salaries/:id
+     * Atualizar registro de salário
+     */
+    async update(req, res) {
+        try {
+            const { id } = req.params;
+            const { amount } = req.body;
+
+            if (!amount || amount <= 0) {
+                return res.status(400).json({ 
+                    error: 'Valor inválido',
+                    message: 'O valor do salário deve ser maior que zero'
+                });
+            }
+
+            const salary = await Salary.findOneAndUpdate(
+                { _id: id, userId: req.userId },
+                { amount: parseFloat(amount) },
+                { new: true, runValidators: true }
+            );
+
+            if (!salary) {
+                return res.status(404).json({ 
+                    error: 'Salário não encontrado',
+                    message: 'Não foi possível encontrar este registro de salário'
+                });
+            }
+
+            return res.json({
+                message: 'Salário atualizado com sucesso',
+                salary
+            });
+        } catch (error) {
+            return res.status(500).json({ 
+                error: 'Erro ao atualizar salário',
+                message: error.message
+            });
+        }
+    },
+
+    /**
      * DELETE /salaries/:id
      * Remover registro de salário
      */
