@@ -24,6 +24,9 @@ router.get('/current', salaryController.current);
 // GET /api/salaries/:month/:year - Salário de um mês específico
 router.get('/:month/:year', salaryController.getByMonthYear);
 
+// PUT /api/salaries/:id - Atualizar salário
+router.put('/:id', salaryController.update);
+
 // DELETE /api/salaries/:id - Remover salário
 router.delete('/:id', salaryController.delete);
 

@@ -80,7 +80,7 @@ const startServer = async () => {
 ║                                                            ║
 ║  🚀 API Gerenciamento de Gastos v2.0                       ║
 ║                                                            ║
-║   Server: http://localhost:${PORT}                         ║
+║   Server Local: http://localhost:${PORT}                   ║
 ║   Database: MongoDB Atlas                                  ║
 ║                                                            ║
 ║   Endpoints:                                               ║

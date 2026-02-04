@@ -255,14 +255,28 @@ const debtController = {
             });
             const salary = currentSalary ? currentSalary.amount : 0;
 
-            // Buscar dívidas não pagas
-            const debts = await Debt.find({ userId, isPaid: false });
+            // Buscar todas as dívidas (pagas e não pagas)
+            // Para não retornar valor ao salário quando "quitadas" (exceto parceladas finalizadas que não devem contar mais)
+            const allDebts = await Debt.find({ userId });
 
             // Calcular totais
             let totalMonthly = 0;
             let totalWeekly = 0;
 
-            debts.forEach(debt => {
+            allDebts.forEach(debt => {
+                // Se for parcelada e já terminou (isPaid = true), verificar se foi paga neste mês
+                // Se foi paga neste mês (pela data de atualização), consideramos como gasto do mês.
+                // Se foi paga em meses anteriores, ignoramos.
+                if (debt.type === 'installment' && debt.isPaid) {
+                    const updatedDate = new Date(debt.updatedAt);
+                    const isPaidThisMonth = updatedDate.getMonth() === now.getMonth() && 
+                                          updatedDate.getFullYear() === now.getFullYear();
+                    
+                    if (!isPaidThisMonth) {
+                        return;
+                    }
+                }
+
                 if (debt.type === 'installment' || debt.type === 'monthly') {
                     totalMonthly += debt.amount;
                 } else if (debt.type === 'weekly') {
@@ -274,23 +288,27 @@ const debtController = {
             const grandTotalMonthly = totalMonthly + weeklyToMonthly;
             const remaining = salary - grandTotalMonthly;
 
-            // Análise
+            // Cálculo da porcentagem do salário gasta
+            const debtRatio = salary > 0 ? (grandTotalMonthly / salary) * 100 : 0;
+
+            // Análise baseada na porcentagem
             let status, recommendation;
-            if (remaining > salary * 0.3) {
+            
+            if (salary === 0) {
+                 status = 'Sem Salário';
+                 recommendation = 'Cadastre seu salário para ver a análise.';
+            } else if (debtRatio <= 25) {
                 status = 'Excelente';
-                recommendation = 'Você está com uma boa folga! Considere investir ou criar uma reserva de emergência.';
-            } else if (remaining > salary * 0.1) {
-                status = 'Bom';
-                recommendation = 'Suas finanças estão equilibradas. Tente manter ou reduzir um pouco os gastos.';
-            } else if (remaining > 0) {
-                status = 'Atenção';
-                recommendation = 'Sua margem está apertada. Considere revisar seus gastos.';
+                recommendation = 'Sua saúde financeira está ótima! (Gastos entre 0% e 25% da renda).';
+            } else if (debtRatio <= 40) {
+                status = 'Cuidado';
+                recommendation = 'Atenção aos gastos, você está comprometendo uma parte considerável da renda (25% a 40%).';
             } else {
-                status = 'Crítico';
-                recommendation = 'Você está gastando mais do que ganha! Revise urgentemente suas dívidas.';
+                status = 'Ajuste suas dívidas'; // Ou 'Melhore isso'
+                recommendation = 'Seus gastos ultrapassaram 40% da renda. É hora de revisar e cortar despesas.';
             }
 
-            // Sugestões de distribuição
+            // Sugestões de distribuição (opcional, mantendo lógica anterior se sobrar dinheiro)
             let suggestions = null;
             if (remaining > 0) {
                 suggestions = {
@@ -312,6 +330,7 @@ const debtController = {
                     },
                     remaining,
                     status,
+                    debtRatio: debtRatio.toFixed(1), // Retornando a porcentagem também
                     recommendation,
                     suggestions
                 }
