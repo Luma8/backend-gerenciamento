@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema({
         required: [true, 'Senha é obrigatória'],
         minlength: 6,
         select: false // Não retorna senha por padrão
+    },
+    avatar: {
+        type: String,
+        default: null // URL ou caminho da imagem
     }
 }, {
     timestamps: true

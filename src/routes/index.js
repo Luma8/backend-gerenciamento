@@ -5,6 +5,7 @@ const authRoutes = require('./authRoutes');
 const salaryRoutes = require('./salaryRoutes');
 const debtRoutes = require('./debtRoutes');
 const goalRoutes = require('./goalRoutes');
+const userRoutes = require('./userRoutes');
 
 /**
  * Agregador de rotas
@@ -15,5 +16,6 @@ router.use('/auth', authRoutes);
 router.use('/salaries', salaryRoutes);
 router.use('/debts', debtRoutes);
 router.use('/goals', goalRoutes);
+router.use('/user', userRoutes);
 
 module.exports = router;
