@@ -46,6 +46,24 @@ const debtSchema = new mongoose.Schema({
     isPaid: {
         type: Boolean,
         default: false
+    },
+    interestRate: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100 // taxa mensal em %
+    },
+    dueDate: {
+        type: Date,
+        default: null // data de vencimento
+    },
+    hasMonthlyRecurrence: {
+        type: Boolean,
+        default: false // se as parcelas se repetem todo mês
+    },
+    lastPaymentDate: {
+        type: Date,
+        default: null // última vez que parcela foi paga
     }
 }, {
     timestamps: true
