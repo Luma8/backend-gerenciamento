@@ -12,7 +12,7 @@ const debtController = {
      */
     async create(req, res) {
         try {
-            const { name, amount, type, installments } = req.body;
+            const { name, amount, type, installments, interestRate, dueDate, hasMonthlyRecurrence } = req.body;
             const userId = req.userId;
 
             // Validações
@@ -45,6 +45,27 @@ const debtController = {
                 });
             }
 
+            // Validação da taxa de juros
+            const rate = interestRate ? parseFloat(interestRate) : 0;
+            if (rate < 0 || rate > 100) {
+                return res.status(400).json({ 
+                    error: 'Taxa inválida',
+                    message: 'A taxa de juros deve estar entre 0% e 100%'
+                });
+            }
+
+            // Validação da data de vencimento
+            let parsedDueDate = null;
+            if (dueDate) {
+                parsedDueDate = new Date(dueDate);
+                if (isNaN(parsedDueDate.getTime())) {
+                    return res.status(400).json({ 
+                        error: 'Data inválida',
+                        message: 'A data de vencimento deve ser uma data válida'
+                    });
+                }
+            }
+
             const debt = await Debt.create({
                 userId,
                 name: name.trim(),
@@ -52,7 +73,10 @@ const debtController = {
                 type,
                 color: req.body.color || '#8b5cf6',
                 installments: type === 'installment' ? parseInt(installments) : null,
-                currentInstallment: type === 'installment' ? 1 : null
+                currentInstallment: type === 'installment' ? 1 : null,
+                interestRate: rate,
+                dueDate: parsedDueDate,
+                hasMonthlyRecurrence: hasMonthlyRecurrence || false
             });
 
             return res.status(201).json({
@@ -162,6 +186,27 @@ const debtController = {
     },
 
     /**
+     * Calcular juros acumulados de uma dívida
+     */
+    calculateInterest(debt) {
+        if (debt.interestRate === 0 || !debt.dueDate) return 0;
+        
+        const now = new Date();
+        const dueDate = new Date(debt.dueDate);
+        const lastPayment = debt.lastPaymentDate ? new Date(debt.lastPaymentDate) : null;
+        
+        // Se já foi paga neste mês, não calcula juros
+        if (lastPayment && lastPayment.getMonth() === now.getMonth() && lastPayment.getFullYear() === now.getFullYear()) {
+            return 0;
+        }
+        
+        const daysOverdue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
+        const monthsOverdue = daysOverdue / 30; // aproximado
+        
+        return debt.amount * (debt.interestRate / 100) * monthsOverdue;
+    },
+
+    /**
      * POST /debts/:id/pay
      * Pagar uma parcela (para dívidas parceladas)
      */
@@ -184,21 +229,45 @@ const debtController = {
                 });
             }
 
-            if (debt.currentInstallment >= debt.installments) {
-                debt.isPaid = true;
+            // Calcular juros acumulados antes do pagamento
+            const accruedInterest = this.calculateInterest(debt);
+            const totalToPay = debt.amount + accruedInterest;
+
+            // Atualizar data do último pagamento
+            debt.lastPaymentDate = new Date();
+
+            // Para dívidas com recorrência mensal, as parcelas continuam indefinidamente
+            if (debt.hasMonthlyRecurrence) {
+                // Não incrementa currentInstallment, mantém o mesmo
+                // Apenas atualiza a data do último pagamento
             } else {
-                debt.currentInstallment += 1;
+                // Lógica normal para parcelas finitas
+                if (debt.currentInstallment >= debt.installments) {
+                    debt.isPaid = true;
+                } else {
+                    debt.currentInstallment += 1;
+                }
             }
 
             await debt.save();
 
-            const message = debt.isPaid 
-                ? 'Última parcela paga! Dívida quitada!' 
-                : `Parcela ${debt.currentInstallment - 1} paga! Próxima: ${debt.currentInstallment}/${debt.installments}`;
+            let message;
+            if (debt.hasMonthlyRecurrence) {
+                message = `Parcela paga! Valor: R$ ${totalToPay.toFixed(2)} (R$ ${debt.amount.toFixed(2)} + R$ ${accruedInterest.toFixed(2)} juros)`;
+            } else {
+                message = debt.isPaid 
+                    ? 'Última parcela paga! Dívida quitada!' 
+                    : `Parcela ${debt.currentInstallment - 1} paga! Próxima: ${debt.currentInstallment}/${debt.installments}`;
+            }
 
             return res.json({
                 message,
-                debt
+                debt,
+                paymentDetails: {
+                    principal: debt.amount,
+                    interest: accruedInterest,
+                    total: totalToPay
+                }
             });
         } catch (error) {
             return res.status(400).json({ 
@@ -262,12 +331,13 @@ const debtController = {
             // Calcular totais
             let totalMonthly = 0;
             let totalWeekly = 0;
+            let totalInterest = 0;
 
             allDebts.forEach(debt => {
                 // Se for parcelada e já terminou (isPaid = true), verificar se foi paga neste mês
                 // Se foi paga neste mês (pela data de atualização), consideramos como gasto do mês.
                 // Se foi paga em meses anteriores, ignoramos.
-                if (debt.type === 'installment' && debt.isPaid) {
+                if (debt.type === 'installment' && debt.isPaid && !debt.hasMonthlyRecurrence) {
                     const updatedDate = new Date(debt.updatedAt);
                     const isPaidThisMonth = updatedDate.getMonth() === now.getMonth() && 
                                           updatedDate.getFullYear() === now.getFullYear();
@@ -277,8 +347,15 @@ const debtController = {
                     }
                 }
 
+                // Calcular juros para dívidas parceladas
+                let interest = 0;
+                if (debt.type === 'installment') {
+                    interest = this.calculateInterest(debt);
+                    totalInterest += interest;
+                }
+
                 if (debt.type === 'installment' || debt.type === 'monthly') {
-                    totalMonthly += debt.amount;
+                    totalMonthly += debt.amount + interest;
                 } else if (debt.type === 'weekly') {
                     totalWeekly += debt.amount;
                 }
@@ -326,9 +403,10 @@ const debtController = {
                         totalMonthly,
                         totalWeekly,
                         weeklyToMonthly,
-                        grandTotalMonthly
+                        grandTotalMonthly,
+                        totalInterest
                     },
-                    remaining,
+                    remaining: salary - grandTotalMonthly,
                     status,
                     debtRatio: debtRatio.toFixed(1), // Retornando a porcentagem também
                     recommendation,
